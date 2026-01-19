@@ -1,3 +1,5 @@
+// trigger redeploy - paso 1
+
 const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
@@ -9,17 +11,34 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const CHATWOOT_HMAC_SECRET = process.env.CHATWOOT_HMAC_SECRET || "";
 
-// health check
+/**
+ * Health check
+ */
 app.get("/health", (req, res) => {
-  res.json({ ok: true, service: "agent-backend" });
+  res.json({
+    ok: true,
+    service: "agent-backend",
+    timestamp: new Date().toISOString()
+  });
 });
 
-// generar identity para chatwoot
+/**
+ * Endpoint para recibir lead desde la landing
+ * y generar identifier_hash para Chatwoot
+ */
 app.post("/lead", (req, res) => {
   const { name, phone, email } = req.body || {};
 
   if (!name || (!phone && !email)) {
-    return res.status(400).json({ error: "Faltan datos" });
+    return res.status(400).json({
+      error: "Falta name y (phone o email)"
+    });
+  }
+
+  if (!CHATWOOT_HMAC_SECRET) {
+    return res.status(500).json({
+      error: "CHATWOOT_HMAC_SECRET no configurado en Railway"
+    });
   }
 
   const identifier =
@@ -27,21 +46,24 @@ app.post("/lead", (req, res) => {
     phone ||
     crypto.randomUUID();
 
-  if (!CHATWOOT_HMAC_SECRET) {
-    return res.status(500).json({ error: "CHATWOOT_HMAC_SECRET no configurado" });
-  }
-
   const identifier_hash = crypto
     .createHmac("sha256", CHATWOOT_HMAC_SECRET)
     .update(identifier)
     .digest("hex");
 
-  console.log("Nuevo lead:", { name, phone, email });
+  console.log("Nuevo lead recibido:", {
+    name,
+    phone,
+    email,
+    identifier
+  });
 
-  res.json({ identifier, identifier_hash });
+  res.json({
+    identifier,
+    identifier_hash
+  });
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-// trigger redeploy
