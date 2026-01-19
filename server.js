@@ -1,79 +1,46 @@
-import express from "express";
-import axios from "axios";
+const express = require("express");
+const cors = require("cors");
+const crypto = require("crypto");
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
-// PASSWORD FACIL
-function generarPassword() {
-  return "Casa" + Math.floor(1000 + Math.random() * 9000);
-}
+const PORT = process.env.PORT || 3000;
+const CHATWOOT_HMAC_SECRET = process.env.CHATWOOT_HMAC_SECRET || "";
 
-// WEBHOOK CHATWOOT
-app.post("/chatwoot-webhook", async (req, res) => {
-  try {
-    const conversationId = req.body.conversation?.id;
-    const accountId = req.body.account?.id;
-    const sender = req.body.sender;
-
-    if (!conversationId || !accountId || !sender) {
-      return res.sendStatus(200);
-    }
-
-    const userName =
-      sender.name?.toLowerCase().replace(/\s/g, "") +
-      Math.floor(100 + Math.random() * 900);
-
-    const phoneNumber = sender.phone_number || "000000000";
-    const password = generarPassword();
-
-    // CREAR USUARIO EN TU PANEL
-    await axios.post(
-      "https://admin-api.agt-digi.com/Player/Create",
-      {
-        userName,
-        phoneNumber,
-        password,
-        confirmPassword: password,
-        currencyCode: "PYG"
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${process.env.AGENT_TOKEN}`
-        }
-      }
-    );
-
-    // RESPONDER EN CHATWOOT
-    await axios.post(
-      `https://app.chatwoot.com/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
-      {
-        content: `🍀 *Gracias por registrarte*
-
-👤 Usuario: *${userName}*
-🔑 Contraseña: *${password}*
-🔗 Ingresá acá: https://azar247.com
-
-¡Muchos éxitos! 🎰`
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          api_access_token: process.env.CW_TOKEN
-        }
-      }
-    );
-
-    res.sendStatus(200);
-  } catch (error) {
-    console.error("ERROR:", error.response?.data || error.message);
-    res.sendStatus(500);
-  }
+// health check
+app.get("/health", (req, res) => {
+  res.json({ ok: true, service: "agent-backend" });
 });
 
-// 🚀 IMPORTANTE: USAR PUERTO DE RAILWAY
-const PORT = process.env.PORT || 3000;
+// generar identity para chatwoot
+app.post("/lead", (req, res) => {
+  const { name, phone, email } = req.body || {};
+
+  if (!name || (!phone && !email)) {
+    return res.status(400).json({ error: "Faltan datos" });
+  }
+
+  const identifier =
+    (email && email.toLowerCase()) ||
+    phone ||
+    crypto.randomUUID();
+
+  if (!CHATWOOT_HMAC_SECRET) {
+    return res.status(500).json({ error: "CHATWOOT_HMAC_SECRET no configurado" });
+  }
+
+  const identifier_hash = crypto
+    .createHmac("sha256", CHATWOOT_HMAC_SECRET)
+    .update(identifier)
+    .digest("hex");
+
+  console.log("Nuevo lead:", { name, phone, email });
+
+  res.json({ identifier, identifier_hash });
+});
+
 app.listen(PORT, () => {
-  console.log("Backend activo en puerto", PORT);
+  console.log(`Server running on port ${PORT}`);
 });
